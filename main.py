@@ -4,19 +4,41 @@ from pprint import pprint
 
 
 VK_ENDPOINT = 'https://api.vk.com/method/'
-VK_VER = '5.89'
+VK_VER = '5.126'
 
 
 class VkUser:
-    def __init__(self, user_id):
-        self.id = user_id
+    def __init__(self, some_id):
+        self.user = requests.get(VK_ENDPOINT + 'users.get', params={'access_token': get_token(),
+                                                                    'v': VK_VER,
+                                                                    'user_ids': some_id,
+                                                                    'fields': 'counters, '
+                                                                              'domain'}).json()
+        self.id = self.user['response'][0]['id']
+        time.sleep(0.5)
+
+
+
+    def __str__(self):
+        output = f"https://vk.com/id{self.id}"
+        return output
+
+    def __and__(self, other):
+        self.mutual_friends = requests.get(VK_ENDPOINT + 'friends.getMutual',
+                                           params={
+                                                'access_token': get_token(),
+                                                'v': VK_VER,
+                                                'source_uid': self.id,
+                                                'target_uid': other.id
+                                                   }).json()
+        return self.mutual_friends
+        time.sleep(0.5)
+
+
+
 
     def get_self(self):
-        user = requests.get(VK_ENDPOINT + 'users.get', params={'access_token': get_token(),
-                                                               'v': VK_VER,
-                                                               'user_ids': self.id,
-                                                               'fields': 'photo_50'})
-        pprint(user.json())
+        pprint(self.user)
 
 
 def get_token():
@@ -26,7 +48,7 @@ def get_token():
 
 
 
-
+"""стереть тут не забыть!"""
 # class OverflowSearch:
 #     def __init__(self):
 #         pass
@@ -80,7 +102,13 @@ def get_token():
 
 def go_vk():
     me = VkUser('1258178')
-    me.get_self()
+
+    it1 = VkUser('belindr')
+
+    it2 = VkUser('adres.zanyat')
+
+    pprint(it1 & it2)
+
 
 
 if __name__ == '__main__':
