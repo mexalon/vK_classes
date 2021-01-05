@@ -1,12 +1,12 @@
 import requests
 import time
 
-
 VK_ENDPOINT = 'https://api.vk.com/method/'
 VK_VER = '5.126'
 
 
 def get_token(file_name: str):
+    """получить токен из файла"""
     with open(file_name, 'r', encoding='utf-8') as f:
         token = f.readline()
     return token
@@ -25,11 +25,29 @@ class User:
 
 
 class VkUser(User):
-    """На вход подаётся json пользователя ВК"""
-    def __init__(self, some_user):
-        super().__init__()
-        self.user = some_user
-        self.id = some_user['response'][0]['id']
+    """На вход подаётся id или домен пользователя ВК"""
+    def __init__(self, some_id):
+
+        some_user = requests.get(VK_ENDPOINT + 'users.get', params={'access_token': VK_TOKEN,
+                                                                    'v': VK_VER,
+                                                                    'user_ids': some_id,
+                                                                    }).json()
+        time.sleep(0.5)  # чтобы не забанили, ждём пол секунды
+        new_id = None
+        new_user = None
+        if 'error' in some_user.keys():
+            print(some_user['error']['error_msg'])  # криво введён айди, экземпляр остаётся с пустыми атрибутами
+        else:
+            new_user = some_user
+            new_id = some_user['response'][0]['id']
+            is_it_old = check_id(new_id)
+            if is_it_old:
+                print(f'Такой пользовательь уже есть в моём реестре: ID{new_id}')
+            else:
+                super().__init__()  # прописывается в индекс уникальных объектов
+
+        self.user = new_user
+        self.id = new_id
 
     def __str__(self):
         """Имя Фамилия: ссылка на профиль"""
@@ -40,16 +58,21 @@ class VkUser(User):
 
     def __and__(self, other):
         """Поиск общих друзей через соответствующий метод API"""
-        self.mutual_friends = requests.get(VK_ENDPOINT + 'friends.getMutual',
-                                           params={
-                                                'access_token': VK_TOKEN,
-                                                'v': VK_VER,
-                                                'source_uid': self.id,
-                                                'target_uid': other.id
-                                                   }).json()
+        mutual_friends = requests.get(VK_ENDPOINT + 'friends.getMutual',
+                                      params={
+                                          'access_token': VK_TOKEN,
+                                          'v': VK_VER,
+                                          'source_uid': self.id,
+                                          'target_uid': other.id
+                                      }).json()
         time.sleep(0.5)
         # каждый объект проходит инициализацию с обращением к users.get поэтому дело не быстрое
-        output = [add_user(str(entry)) for entry in self.mutual_friends['response']]
+        if 'error' in mutual_friends.keys():
+            print(mutual_friends['error']['error_msg'])
+        if 'response' in mutual_friends.keys():
+            output = [VkUser(str(entry)) for entry in mutual_friends['response']]
+        else:
+            output = []
         return output
 
 
@@ -65,32 +88,17 @@ def get_id_from_url(url: str):
 
 
 def add_user(new_id=None):
-    """Создание нового объекта класса пользовалетя ВК.
-    Если такого ID нет в ВК, возвращает False
-    Если ID есть в ВК, возвращает новый экземпляр класса
-    Если такой экземпляр уже есть, то возвращается ссылка на него."""
+    """Создание нового объекта"""
     if new_id is None:
         url = input('введите ссылку на пользователя ВК:\n')
         temp_id = get_id_from_url(url)
     else:
         temp_id = new_id
 
-    new_user = requests.get(VK_ENDPOINT + 'users.get', params={'access_token': VK_TOKEN,
-                                                                'v': VK_VER,
-                                                                'user_ids': temp_id,
-                                                               }).json()
-    time.sleep(0.5)  # чтобы не забанили, ждём пол секунды
-    output = False
-    if 'error' in new_user.keys():
-        print(new_user['error']['error_msg'])
-    else:
-        proper_id = new_user['response'][0]['id']
-        is_it_old = check_id(proper_id)
-        if is_it_old:
-            print(f'Такой пользовательь уже есть в моём реестре: {proper_id}')
-            output = is_it_old
-        else:
-            output = VkUser(new_user)  # создание экземпляра объекта
+    output = VkUser(temp_id)  # тут может и какой то другой класс создаваться
+    if output.user:
+        print(f'Добавлен {output}')
+
     return output
 
 
@@ -115,16 +123,15 @@ def get_mutual_friends():
     urls = input('введите через запятую ссылки на двух пользователей ВК:\n')
     id_list = [get_id_from_url(entry) for entry in urls.split(',')]
     all_trash_entries = [add_user(entry) for entry in id_list]
-    users = [entry for entry in all_trash_entries if isinstance(entry, VkUser)]
-    if len(users) >= 2:
-        result = users[0] & users[1]  # всё как в задании:)
+    good_objects = [entry for entry in all_trash_entries if entry.user]
+    if len(good_objects) >= 2:
+        result = good_objects[0] & good_objects[1]  # всё как в задании:)
         if result:
-            output = result
             print('Общие друзья:')
-            print_users(*output)
-            return output
+            print_users(*result)
+            return result
         else:
-            print('У этих пользователей нет общих друзей')
+            print('Нет общих друзей в общем доступе')
     else:
         print('Некорректный ввод пользователей')
 
