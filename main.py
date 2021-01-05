@@ -1,6 +1,5 @@
 import requests
 import time
-from pprint import pprint
 
 
 VK_ENDPOINT = 'https://api.vk.com/method/'
@@ -17,7 +16,8 @@ VK_TOKEN = get_token('token.txt')
 
 
 class User:
-    all_users = {}  # индекс всех объектов классов, чтобы было
+    """суперкласс для для учёта всех создаваемых объектов"""
+    all_users = {}  # индекс всех объектов классов
 
     def __init__(self):
         self.all_users.setdefault(type(self).__qualname__, [])
@@ -25,8 +25,8 @@ class User:
 
 
 class VkUser(User):
+    """На вход подаётся json пользователя ВК"""
     def __init__(self, some_user):
-        """инициализаця объекта через обращение к users.get"""
         super().__init__()
         self.user = some_user
         self.id = some_user['response'][0]['id']
@@ -52,14 +52,6 @@ class VkUser(User):
         output = [add_user(str(entry)) for entry in self.mutual_friends['response']]
         return output
 
-    def get_self(self):
-        pprint(self.user)
-
-
-def print_users(*args):
-    for entry in args:
-        print(entry)
-
 
 def get_id_from_url(url: str):
     """Разбор ссылки профиля"""
@@ -67,21 +59,16 @@ def get_id_from_url(url: str):
     if result:
         output = result
     else:
-        output = None
+        output = None  # будет ссылка на свой собственный аккаунт
 
     return output
 
 
-def quit_():
-    print('Выход')
-    return False
-
-
 def add_user(new_id=None):
     """Создание нового объекта класса пользовалетя ВК.
+    Если такого ID нет в ВК, возвращает False
     Если ID есть в ВК, возвращает новый экземпляр класса
-    Если такой экземпляр уже есть, то возвращается ссылка на него.
-    Если такого пользователя в ВК нет возвращает True"""
+    Если такой экземпляр уже есть, то возвращается ссылка на него."""
     if new_id is None:
         url = input('введите ссылку на пользователя ВК:\n')
         temp_id = get_id_from_url(url)
@@ -93,9 +80,9 @@ def add_user(new_id=None):
                                                                 'user_ids': temp_id,
                                                                }).json()
     time.sleep(0.5)  # чтобы не забанили, ждём пол секунды
+    output = False
     if 'error' in new_user.keys():
         print(new_user['error']['error_msg'])
-        output = True
     else:
         proper_id = new_user['response'][0]['id']
         is_it_old = check_id(proper_id)
@@ -103,42 +90,28 @@ def add_user(new_id=None):
             print(f'Такой пользовательь уже есть в моём реестре: {proper_id}')
             output = is_it_old
         else:
-            output = VkUser(new_user)
+            output = VkUser(new_user)  # создание экземпляра объекта
     return output
 
 
 def check_id(some_id):
-    """"Проверка, есть ли пользователь с таким ID среди уже созданных экземпляров класса
+    """"Проверка, есть ли пользователь с таким ID среди уже созданных экземпляров всех классов
     Возвращает либо имеющийся экземпляр класса, либо False"""
     spam = User()
     spam.all_users.pop(type(spam).__qualname__)
-    if VkUser.__qualname__ in spam.all_users.keys():
-        all_id = [entry.id for entry in spam.all_users[VkUser.__qualname__]]
-        if some_id in all_id:
-            output = spam.all_users[VkUser.__qualname__][all_id.index(some_id)]
-        else:
-            output = False
-
-    else:
-        output = False
+    output = False
+    if spam.all_users.keys():
+        for entry in spam.all_users.values():
+            for item in entry:
+                if item.id == some_id:
+                    output = item
 
     return output
 
 
-def print_all():
-    """Вывод всех имеющихся экземпляров класса"""
-    spam = User()
-    spam.all_users.pop(type(spam).__qualname__)
-    if VkUser.__qualname__ in spam.all_users.keys():
-        print_users(*spam.all_users[VkUser.__qualname__])
-    else:
-        print('Нет пользователей для вывода')
-    return True
-
-
 def get_mutual_friends():
     """Функция поиска общих друзей
-    Возвращает список экземпляров - общих друзей, либо True, если друзей нет"""
+    Возвращает список экземпляров класса - общих друзей, если они есть"""
     urls = input('введите через запятую ссылки на двух пользователей ВК:\n')
     id_list = [get_id_from_url(entry) for entry in urls.split(',')]
     all_trash_entries = [add_user(entry) for entry in id_list]
@@ -149,37 +122,61 @@ def get_mutual_friends():
             output = result
             print('Общие друзья:')
             print_users(*output)
+            return output
         else:
             print('У этих пользователей нет общих друзей')
-            output = True
     else:
         print('Некорректный ввод пользователей')
-        output = True
 
-    return output
+
+def print_all():
+    """Вывод всех имеющихся экземпляров всех классов"""
+    spam = User()
+    spam.all_users.pop(type(spam).__qualname__)
+    if spam.all_users.keys():
+        for entry in spam.all_users.values():
+            print_users(*entry)
+    else:
+        print('Нет пользователей для вывода')
+
+
+def print_users(*args):
+    for entry in args:
+        print(entry)
+
+
+def help_():
+    print('а   – добавить новый объект пользователя;'
+          '\nm   – найти общих друзей двух пользователей;'
+          '\nall – вывести список всех объектов пользователей;'
+          '\nq   – выход.'
+          )
+
+
+def quit_():
+    print('Выход')
+    raise SystemExit(0)
 
 
 def get_action(command_: str):
     all_commands_ = {'q': quit_,
                      'a': add_user,
                      'all': print_all,
-                     'm': get_mutual_friends
+                     'm': get_mutual_friends,
+                     'help': help_
                      }
 
     if command_ in all_commands_.keys():
-        output = all_commands_[command_]()
+        all_commands_[command_]()
     else:
         print('неверная команда')
-        output = True
-
-    return output
 
 
 def go_vk():
-    go_go = True
-    while go_go:
+    print('Выберите "q" для выхода или "help" для списка доступных команд')
+    while True:
         my_command = input('Введите команду:')
-        go_go = get_action(my_command)
+        get_action(my_command)
 
 
 if __name__ == '__main__':
