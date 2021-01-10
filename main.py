@@ -1,5 +1,6 @@
 import requests
 import time
+import os
 from pprint import pprint
 
 VK_ENDPOINT = 'https://api.vk.com/method/'
@@ -82,7 +83,7 @@ class VkUser():
 
         return output
 
-    def get_photos(self, album_id):
+    def get_photos(self, album_id, photo_ids=None):
         if self.id:
             photos = requests.get(VK_ENDPOINT + 'photos.get',
                                   params={
@@ -90,20 +91,59 @@ class VkUser():
                                       'v': VK_VER,
                                       'owner_id': self.id,
                                       'album_id': album_id,
+                                      'photo_ids': photo_ids,
                                       'extended': 1
                                   }).json()
 
             time.sleep(0.5)  # чтобы не забанили, ждём пол секунды
             if not self.chek_error(photos):
                 if photos['response']:
-                    photos_id_index = list()
+                    photos_index = list()
                     print(f'{self}\nФотографии в альбоме {album_id}:')
                     for num, item in enumerate(photos['response']['items']):
                         top_size = self.best_size(item["sizes"])
-                        print(f'{num}. {item["id"]} >>Лучший размер {top_size["type"]} >> Лайков: {item["likes"]["count"]} >> добавлена {item["date"]}>> {top_size["url"]}')
-                        photos_id_index.append(item['id'])
+                        print(
+                            f'{num}. >> id: {item["id"]} >> Лучший размер {top_size["type"]} >> Лайков: {item["likes"]["count"]} >> добавлена {item["date"]} >> {top_size["url"]}')
+                        photo_stat = {'id': item["id"],
+                                      'size': top_size["type"],
+                                      'likes': item["likes"]["count"],
+                                      'date': item["date"],
+                                      'url': top_size["url"]}
 
-                    output = photos_id_index
+                        photos_index.append(photo_stat)
+
+                    output = sorted(photos_index, key=(lambda item: int(item['likes'])), reverse=True)
+            else:
+                output = False
+        else:
+            output = False
+
+        return output
+
+    def get_photo_by_id(self, u_id: str, p_id: str):
+        if self.id:
+            photos = requests.get(VK_ENDPOINT + 'photos.getById',
+                                  params={
+                                      'access_token': VK_TOKEN,
+                                      'v': VK_VER,
+                                      'photos': f'{u_id}_{p_id}',
+                                      'extended': 1
+                                  }).json()
+
+            time.sleep(0.5)  # чтобы не забанили, ждём пол секунды
+            if not self.chek_error(photos):
+                if photos['response']:
+                    item = photos['response'][0]
+                    top_size = self.best_size(item["sizes"])
+                    print(
+                        f'id: {item["id"]} >> Лучший размер {top_size["type"]} >> Лайков: {item["likes"]["count"]} >> добавлена {item["date"]} >> {top_size["url"]}')
+                    photo_stat = {'id': item["id"],
+                                  'size': top_size["type"],
+                                  'likes': item["likes"]["count"],
+                                  'date': item["date"],
+                                  'url': top_size["url"]}
+
+                    output = photo_stat
             else:
                 output = False
         else:
@@ -129,17 +169,57 @@ def get_user_albums(url=None):
 
 def go_albums(user, index):
     choice = ''
-    print('Выберите номер альбома для скачивания или "n" для выбора другого пользователя:')
     while choice != 'n':
+        print('Выберите номер альбома для скачивания или "n" для выбора другого пользователя:')
         choice = input().lower().strip()
         if choice.isdigit():
             num = int(choice)
             if 0 <= num < len(index):
-                user.get_photos(index[num])
+                all_photos = user.get_photos(index[num])
+                what_to_do_with_photos(all_photos)
             else:
                 print('нет такого альбома')
         else:
             print('не верная команда')
+
+
+def what_to_do_with_photos(all_photos):
+    for entry in all_photos:
+        get_photo(entry)
+
+
+def get_photo(some_photo=None, target_dir='results'):
+    if some_photo is None:
+        some_photo = input('введите ссылку на фото:\n')
+        photo_stats = get_photo_from_url(some_photo)
+    else:
+        photo_stats = some_photo
+
+    if photo_stats:
+        if target_dir not in os.listdir():
+            os.mkdir(target_dir)
+
+        photo_itself = requests.get(photo_stats['url'])
+        photo_name = f"{photo_stats['likes']}_likes_{photo_stats['date']}_loaded.jpg"
+        print(photo_name)
+        with open(os.path.join(target_dir, photo_name), 'wb') as f:
+            f.write(photo_itself.content)
+    else:
+        print('Нет такого фото')
+
+
+def get_photo_from_url(url):
+    if 'vk.com' in url:
+        u_id_p_id = url.split('photo')[1].split('?')[0].split('%')[0]
+        u_id = u_id_p_id.split('_')[0]
+        p_id = u_id_p_id.split('_')[1]
+        the_user = add_user(u_id)
+        if the_user:
+            the_photo = the_user.get_photo_by_id(u_id, p_id)
+        else:
+            the_photo = None
+
+        return the_photo
 
 
 # def y_or_n():
@@ -192,9 +272,15 @@ def quit_():
     raise SystemExit(0)
 
 
+def test_():
+    get_photo()
+
+
 def get_action(command_: str):
     all_commands_ = {'q': quit_,
-                     'help': help_
+                     'help': help_,
+                     'g': get_photo,
+                     't': test_
                      }
 
     if command_ in all_commands_.keys():
@@ -204,7 +290,10 @@ def get_action(command_: str):
 
 
 def go_go():
-    print('Вставьте ссылку на пользователя или выберите "q" для выхода, "help" для справки')
+    print('Вставьте ссылку на пользователя.\n'
+          'введите "q" для выхода,'
+          'введите "g" для того, чтобы скачать одно фото по ссылке, '
+          '"help" для справки')
     while True:
         my_command = input('Ссылка на профиль: ').lower().strip()
         get_action(my_command)
