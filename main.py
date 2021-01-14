@@ -1,6 +1,7 @@
 import requests
 import time
 import os
+import json
 from pprint import pprint
 
 
@@ -46,13 +47,14 @@ class YaUploader:
                                 headers={'Authorization': f'OAuth {self.token}'},
                                 params={'path': dir_name})
         time.sleep(0.5)
-        #response.raise_for_status()
+        # response.raise_for_status()
         code = {response.reason: response.status_code}
         return code
 
 
 class VkUser:
     """На вход подаётся id или домен пользователя ВК"""
+
     def __init__(self, some_id):
         self.token = get_token('VK_token.txt')
         self.endpoint = 'https://api.vk.com/method/'
@@ -115,7 +117,7 @@ class VkUser:
                     albums_id_index = list()
                     print(f'{self}\nАльбомы:')
                     for num, item in enumerate(albums['response']['items']):
-                        print(f'{num}. {item["title"]}')
+                        print(f'{num+1}. {item["title"]}')
                         albums_id_index.append(item['id'])
 
                     output = albums_id_index
@@ -140,22 +142,12 @@ class VkUser:
                                   }).json()
 
             time.sleep(0.5)  # чтобы не забанили, ждём пол секунды
-            if not self.chek_error(photos):  # !не забыть переделать в отдельную функцию! <<<<<<<<<<<<<<<<<<<<
+            if not self.chek_error(photos):
                 if photos['response']:
                     photos_index = list()
-                    print(f'{self}\nФотографии в альбоме {album_id}:')
+                    print(f'Фотографии в альбоме {album_id}:')
                     for num, item in enumerate(photos['response']['items']):
-                        top_size = self.best_size(item["sizes"])
-                        print(
-                            f'{num}. >> id: {item["id"]} >> Лучший размер {top_size["type"]}'
-                            f' >> Лайков: {item["likes"]["count"]}'
-                            f' >> добавлена {item["date"]} >> {top_size["url"]}')
-                        photo_stat = {'id': item["id"],
-                                      'size': top_size["type"],
-                                      'likes': item["likes"]["count"],
-                                      'date': item["date"],
-                                      'url': top_size["url"]}
-
+                        photo_stat = self.photo_json_processing(item, num)
                         photos_index.append(photo_stat)
 
                     output = sorted(photos_index, key=(lambda item: int(item['likes'])), reverse=True)
@@ -178,20 +170,10 @@ class VkUser:
                                   }).json()
 
             time.sleep(0.5)  # чтобы не забанили, ждём пол секунды
-            if not self.chek_error(photos):  # !не забыть переделать в отдельную функцию! <<<<<<<<<<<<<<<<<<<<
+            if not self.chek_error(photos):
                 if photos['response']:
                     item = photos['response'][0]
-                    top_size = self.best_size(item["sizes"])
-                    print(
-                        f'id: {item["id"]} >> Лучший размер {top_size["type"]}'
-                        f' >> Лайков: {item["likes"]["count"]}'
-                        f' >> добавлена {item["date"]} >> {top_size["url"]}')
-                    photo_stat = [{'id': item["id"],
-                                  'size': top_size["type"],
-                                  'likes': item["likes"]["count"],
-                                  'date': item["date"],
-                                  'url': top_size["url"]}]
-
+                    photo_stat = self.photo_json_processing(item)
                     output = photo_stat
             else:
                 output = False
@@ -199,6 +181,21 @@ class VkUser:
             output = False
 
         return output
+
+    def photo_json_processing(self, photo, num=0):
+        """Конвертация json фотки в нужный формат"""
+        top_size = self.best_size(photo["sizes"])
+        print(
+            f'{num + 1}. Фото id:{photo["id"]}; лучший размер: {top_size["type"]};'
+            f' лайков: {photo["likes"]["count"]};'
+            f' добавлена {photo["date"]}; >> {top_size["url"]}')
+        photo_stat = {'id': photo["id"],
+                      'size': top_size["type"],
+                      'likes': photo["likes"]["count"],
+                      'date': photo["date"],
+                      'url': top_size["url"]}
+
+        return photo_stat
 
     def best_size(self, sizes_list):
         """ВЫбор самой большой фотки по типу"""
@@ -220,35 +217,49 @@ def get_user_albums(url=None):
 
 def go_albums(user, index):
     """Выбор альбома для скачивания из списка альбомов"""
-    choice = ''
-    while choice != 'n':
-        print('Выберите номер альбома для скачивания или "n" для выбора другого пользователя:')
-        choice = input().lower().strip()
-        if choice.isdigit():
-            num = int(choice)
-            if 0 <= num < len(index):
-                all_photos = user.get_photos(index[num])
-                what_to_do_with_photos(all_photos)
-            else:
-                print('нет такого альбома')
+    all_commands_ = {'q': quit_,
+                     'n': pass_
+                     }
+    my_command = ''
+    while my_command != 'n':
+        print('Выберите номер альбома для скачивания;'
+              '\n"n" для выбора другого пользователя:'
+              '\n"q" для завершения работы')
+        my_command = input().lower().strip()
+        if my_command in all_commands_.keys():
+            all_commands_[my_command]()
+        elif my_command.isdigit():
+            num = int(my_command)
+            album_processing(user, index, num)
         else:
-            if choice != 'n':
-                print('не верная команда')
+            print('не верно задан выбор')
+
+
+def album_processing(user, index, num):
+    """запускает варианты действия с альбомом фото"""
+    if 1 <= num < len(index) + 1:
+        all_photos = user.get_photos(index[num - 1])
+        what_to_do_with_photos(all_photos)
+    else:
+        print('нет такого альбома')
 
 
 def what_to_do_with_photos(all_photos):
-    choice = ''
-    while choice != 'n':
+    all_commands_ = {'q': quit_,
+                     'l': photo_to_hd,
+                     'y': photo_to_yandex,
+                     'n': pass_
+                     }
+    my_command = ''
+    while my_command != 'n':
         print('Выберите:\n"y" для сохранения на Яндекс Диск;'
               '\n"l" для сохранения на локальный диск;'
-              '\n"n" для выбора другого альбома:')
-        choice = input().lower().strip()
-        if choice == 'n':
-            return
-        if choice == 'l':
-            photo_to_hd(all_photos)
-        elif choice == 'y':
-            photo_to_yandex(all_photos)
+              '\n"n" для выбора другого альбома:'
+              '\n"q" для завершения работы')
+
+        my_command = input().lower().strip()
+        if my_command in all_commands_.keys():
+            all_commands_[my_command](all_photos)
         else:
             print('не верно задан выбор')
 
@@ -280,10 +291,14 @@ def photo_to_yandex(some_photo=None):
             yandex_saver.mkdir(target_dir)
 
         for entry in some_photo:
-            photo_itself = requests.get(entry['url'])
+            photo_itself = requests.get(entry['url']).content
             photo_name = f"{entry['likes']}_likes_{entry['date']}_loaded.jpg"
             print(f"Сохраняю {photo_name}")
-            yandex_saver.upload(photo_itself.content, photo_name, target_dir)
+            yandex_saver.upload(photo_itself, photo_name, target_dir)
+
+        print(f"Сохраняю статистику")
+        name = f"loaded_{photo_stats[0]['date']}_to_{photo_stats[-1]['date']}stats.json"
+        yandex_saver.upload(json.dumps(photo_stats), name, target_dir)
     else:
         print('Нет такого фото')
 
@@ -303,6 +318,12 @@ def photo_to_hd(some_photo=None, target_dir=None):
             print(f"Сохраняю {photo_name}")
             with open(os.path.join(target_dir, photo_name), 'wb') as f:
                 f.write(photo_itself.content)
+
+        print(f"Сохраняю статистику")
+        name = f"loaded_{photo_stats[0]['date']}_to_{photo_stats[-1]['date']}stats.json"
+        with open(os.path.join(target_dir, name), 'w') as f:
+            json.dump(photo_stats, f)
+
     else:
         print('Нет такого фото')
 
@@ -320,16 +341,6 @@ def get_photo_from_url(url):
             the_photo = None
 
         return the_photo
-
-
-# def y_or_n():
-#     done = False
-#     while not done:
-#         answer = input('(y / n):').lower().strip()
-#         if answer == 'y' or answer == 'n':
-#             output = answer == 'y'
-#             done = True
-#     return output
 
 
 def get_id_from_url(url: str):
@@ -360,34 +371,25 @@ def add_user(url=None):
     return output
 
 
-def help_():
+def help_(*args):
     print('ставьте ID пользователя либо ссылку на его профиль и нажмите Enter.\n '
           'После этого Вам будет предложено выбрать альбом для загрузки из списка '
           'альбомов этого пользователя'
           )
 
 
-def quit_():
+def quit_(*args):
     print('Выход')
     raise SystemExit(0)
 
 
-def test_():
-    """функция для тестирования других функций"""
+def pass_(*args):
     pass
 
 
-def get_action(command_: str):
-    all_commands_ = {'q': quit_,
-                     'help': help_,
-                     'o': save_one_photo,
-                     't': test_
-                     }
-
-    if command_ in all_commands_.keys():
-        all_commands_[command_]()
-    else:
-        get_user_albums(command_)
+def test_(*args):
+    """функция для тестирования других функций"""
+    pass
 
 
 def go_go():
@@ -395,9 +397,18 @@ def go_go():
           'введите "q" для выхода,'
           'введите "o" для того, чтобы скачать одно фото по ссылке, '
           '"help" для справки')
+
+    all_commands_ = {'q': quit_,
+                     'help': help_,
+                     'o': save_one_photo,
+                     't': test_
+                     }
     while True:
         my_command = input('Ссылка на профиль: ').lower().strip()
-        get_action(my_command)
+        if my_command in all_commands_.keys():
+            all_commands_[my_command]()
+        else:
+            get_user_albums(my_command)
 
 
 if __name__ == '__main__':
