@@ -1,8 +1,16 @@
+from __future__ import print_function
+
 import requests
 import time
 import os
 import json
 from pprint import pprint
+
+import pickle
+from googleapiclient.discovery import build
+from google_auth_oauthlib.flow import InstalledAppFlow
+from google.auth.transport.requests import Request
+from googleapiclient.http import MediaFileUpload
 
 
 def get_token(file_name: str):
@@ -10,6 +18,99 @@ def get_token(file_name: str):
     with open(file_name, 'r', encoding='utf-8') as f:
         token = f.readline()
     return token
+
+
+class GoogleDriveUploader:
+    """Ощущаю себя немного мартышкой копируя методы гугловских библиотек, не очень ясно понимая содержания,
+    Сделать свои методы с библиотекой requests пока не смог"""
+
+    def __init__(self):
+        self.SCOPES = ["https://www.googleapis.com/auth/drive"]
+        creds = None
+        # The file token.pickle stores the user's access and refresh tokens, and is
+        # created automatically when the authorization flow completes for the first
+        # time.
+        if os.path.exists('token.pickle'):
+            with open('token.pickle', 'rb') as token:
+                creds = pickle.load(token)
+        # If there are no (valid) credentials available, let the user log in.
+        if not creds or not creds.valid:
+            if creds and creds.expired and creds.refresh_token:
+                creds.refresh(Request())
+            else:
+                flow = InstalledAppFlow.from_client_secrets_file(
+                    'credentials.json', self.SCOPES)
+                creds = flow.run_local_server(port=0)
+            # Save the credentials for the next run
+            with open('token.pickle', 'wb') as token:
+                pickle.dump(creds, token)
+
+        self.service = build('drive', 'v3', credentials=creds)
+        self.creds = creds
+        self.endpoint = 'https://www.googleapis.com/drive/v3/'
+        self.endpoint_upload = 'https://www.googleapis.com/upload/drive/v3/'
+
+    def about(self):
+        response = requests.get(self.endpoint + 'about',
+                                headers={"Authorization": "Bearer " + self.creds.token},
+                                params={'fields': 'user'})
+        time.sleep(0.5)
+        pprint(response.json())
+        return response.json()['user']['permissionId']
+
+    def get_files(self):
+        response = requests.get(self.endpoint + 'files',
+                                headers={"Authorization": "Bearer " + self.creds.token},
+                                params={'fields': 'files'})
+        response.raise_for_status()
+        time.sleep(0.5)
+        file_index = list()
+
+        for entry in response.json()['files']:
+            if entry['ownedByMe']:
+                file_index.append({'name': entry['name'], 'id': entry['id'], 'createdTime': entry['createdTime']})
+
+        pprint(file_index)
+        return file_index
+
+    def get_files_alt(self):
+        response = self.service.files().list(fields="files(id, name, createdTime, ownedByMe)").execute()
+        #     q='ownedByMe = true'
+        time.sleep(0.5)
+        file_index = list()
+        for entry in response['files']:
+            if entry['ownedByMe']:
+                file_index.append({'name': entry['name'], 'id': entry['id'], 'createdTime': entry['createdTime']})
+
+        pprint(file_index)
+        return file_index
+
+    def mkdir_alt(self, dir_name: str):
+        file_metadata = {
+            'name': dir_name,
+            'mimeType': 'application/vnd.google-apps.folder'
+        }
+        file = self.service.files().create(body=file_metadata, fields='id').execute()
+        time.sleep(0.5)
+
+        return file['id']
+
+    def upload_alt(self, file: str, file_name: str, folder_id=None, mime=None):
+        file_metadata = {'name': file_name, 'parents': [folder_id]}
+        media = MediaFileUpload(file,
+                                mimetype=mime,
+                                resumable=True)
+        file = self.service.files().create(body=file_metadata, media_body=media, fields='id').execute()
+        print(f"Создан файл id{file['id']}")
+        return file['id']
+
+    # def upload(self, f, file_name: str, dir_name=None):
+    #     """не работает"""
+    #     response = requests.post(self.endpoint_upload + 'files?uploadType=media', files={'files': f},
+    #                              headers={"Authorization": "Bearer " + self.creds.token})
+    #
+    #     print(response.json())
+    #     return
 
 
 class YaUploader:
@@ -117,7 +218,7 @@ class VkUser:
                     albums_id_index = list()
                     print(f'{self}\nАльбомы:')
                     for num, item in enumerate(albums['response']['items']):
-                        print(f'{num+1}. {item["title"]}')
+                        print(f'{num + 1}. {item["title"]}')
                         albums_id_index.append(item['id'])
 
                     output = albums_id_index
@@ -248,12 +349,14 @@ def what_to_do_with_photos(all_photos):
     all_commands_ = {'q': quit_,
                      'l': photo_to_hd,
                      'y': photo_to_yandex,
+                     'g': photo_to_google,
                      'n': pass_
                      }
     my_command = ''
     while my_command != 'n':
         print('Выберите:\n"y" для сохранения на Яндекс Диск;'
               '\n"l" для сохранения на локальный диск;'
+              '\n"g" для сохранения на Гугл Диск;'
               '\n"n" для выбора другого альбома:'
               '\n"q" для завершения работы')
 
@@ -277,7 +380,7 @@ def is_there_some_photo(some_photo=None):
 
 def save_one_photo():
     """Скачать и сохранить в нужное место отдельное фото по ссылке"""
-    photo_stats = is_there_some_photo()
+    photo_stats = [is_there_some_photo()]
     what_to_do_with_photos(photo_stats)
 
 
@@ -301,6 +404,48 @@ def photo_to_yandex(some_photo=None):
         yandex_saver.upload(json.dumps(photo_stats), name, target_dir)
     else:
         print('Нет такого фото')
+
+
+def photo_to_google(some_photo=None):
+    """Сохранение на гугл диск"""
+    """Я не нашёл способ, как залить фото по url без скачивания на диск. Поэтому всё так, как есть"""
+    photo_stats = is_there_some_photo(some_photo)
+    if photo_stats:
+        google_saver = GoogleDriveUploader()
+        target_dir = input('Укажите имя дериктории:').lower().strip()
+        if target_dir:
+            target_dir_id = google_saver.mkdir_alt(target_dir)
+        else:
+            target_dir_id = 'root'
+
+        for entry in some_photo:
+            photo_itself = requests.get(entry['url']).content
+            photo_name = f"{entry['likes']}_likes_{entry['date']}_loaded.jpg"
+            photo_mime = 'image/jpeg'  # надо бы функцию для определения по расширению найти
+            print(f"Сохраняю {photo_name}")
+            trash_upload(google_saver, photo_itself, photo_name, target_dir_id, photo_mime)
+
+        print(f"Сохраняю статистику")
+        json_name = f"loaded_{photo_stats[0]['date']}_to_{photo_stats[-1]['date']}stats.json"
+        json_mime = 'application/json'
+        with open('trash_stats.json', 'w') as t_s:
+            json.dump(photo_stats, t_s)
+        google_saver.upload_alt('trash_stats.json', json_name, target_dir_id, json_mime)
+        os.remove('trash_stats.json')
+
+    else:
+        print('Нет такого фото')
+
+
+def trash_upload(some_saver, thing, thing_name, thing_target_dir_id, thing_mime):
+    """сохранение на гугл через локальный диск"""
+    if 'temp' not in os.listdir():
+        os.mkdir('temp')
+    with open('temp/trash_temp', 'wb') as t_t:
+        t_t.write(thing)
+        some_saver.upload_alt('temp/trash_temp', thing_name, thing_target_dir_id, thing_mime)
+    os.remove('temp/trash_temp')
+    os.rmdir('temp')
 
 
 def photo_to_hd(some_photo=None, target_dir=None):
