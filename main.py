@@ -20,6 +20,60 @@ def get_token(file_name: str):
     return token
 
 
+class InstaUser:
+    """класс пользователя инсты, себя любимого только пока"""
+    def __init__(self):
+        self.token = get_token('Insta_long_token.txt')
+
+        # with open('Insta_long_token.txt', 'r') as f:
+        #     line = f.readline()
+        #     self.token = line.split(';')[0]
+        #     self.my_id = line.split(';')[1]
+
+    def get_me(self):
+        """узнать свой айди по токену"""
+        enpoint = 'https://graph.instagram.com/me'
+        params = {'fields': 'id,username',
+                  'access_token': self.token}
+        response = requests.get(enpoint, params)
+        self.my_id = response.json()['id']
+        time.sleep(0.5)
+
+    def get_media(self):
+        """список своих медиа"""
+        enpoint = 'https://graph.instagram.com/me/media'
+        params = {'access_token': self.token}
+        response = requests.get(enpoint, params)
+        time.sleep(0.5)
+        return response.json()['data']
+
+    def get_my_photos(self, data):
+        """ссылки на скачивание фоток"""
+        enpoint = 'https://graph.instagram.com/'
+        params = {'access_token': self.token, 'fields': 'caption,media_type,media_url,timestamp'}
+        index = list()
+        for num, entry in enumerate(data):
+            response = requests.get(enpoint + entry['id'], params)
+            index.append(self.photo_json_processing(response.json(), num))
+            time.sleep(0.5)
+        return index
+
+    def photo_json_processing(self, photo, num=0):
+        """Конвертация json фотки в нужный формат"""
+        print(
+            f'{num + 1}. Фото id:{photo["id"]};'
+            f' лайков: {"хз"};'
+            f' добавлена {photo["timestamp"]};'
+            f' URL: {photo["media_url"]}')
+        photo_stat = {'id': photo["id"],
+                      'size': "onesize",
+                      'likes': "likes",
+                      'date': photo["id"],  # временно поменял на айди, пока не сделаю конвертацию даты
+                      'url': photo["media_url"]}
+
+        return photo_stat
+
+
 class GoogleDriveUploader:
     """Ощущаю себя немного мартышкой копируя методы гугловских библиотек, не очень ясно понимая содержания,
     Сделать свои методы с библиотекой requests пока не смог"""
@@ -344,6 +398,11 @@ def album_processing(user, index, num):
     else:
         print('нет такого альбома')
 
+def insta_self_photo_get(*args):
+    """функция для скачивания своих фоточек с инсты"""
+    iuser = InstaUser()
+    all_photos = iuser.get_my_photos(iuser.get_media())
+    what_to_do_with_photos(all_photos)
 
 def what_to_do_with_photos(all_photos):
     all_commands_ = {'q': quit_,
@@ -489,7 +548,7 @@ def get_photo_from_url(url):
 
 
 def get_id_from_url(url: str):
-    """Разбор ссылки профиля"""
+    """Разбор ссылки профиля ВК"""
     result = url.strip().split('/id')[-1].split('/')[-1]
     if result:
         output = result
@@ -500,7 +559,7 @@ def get_id_from_url(url: str):
 
 
 def add_user(url=None):
-    """Создание нового объекта"""
+    """Создание нового объекта ВК"""
     if url is None:
         url = input('введите ссылку на пользователя:\n')
         temp_id = get_id_from_url(url)
@@ -529,6 +588,7 @@ def quit_(*args):
 
 
 def pass_(*args):
+    """нужна для выхода из цикла по ключу вызова. вызывается при выборе команды "вернуться назад"""
     pass
 
 
@@ -538,14 +598,16 @@ def test_(*args):
 
 
 def go_go():
-    print('Вставьте ссылку на пользователя.\n'
-          'введите "q" для выхода,'
-          'введите "o" для того, чтобы скачать одно фото по ссылке, '
+    print('Вставьте ссылку на профиль пользователя ВК (id, домен), либо выберите действие:\n'
+          'введите "o" для того, чтобы скачать одно фото из ВК по ссылке;\n'
+          'введите "i" чтобы скачать и сохранить свои фото из Инсты;\n'
+          'введите "q" для выхода;\n'
           '"help" для справки')
 
     all_commands_ = {'q': quit_,
                      'help': help_,
                      'o': save_one_photo,
+                     'i': insta_self_photo_get,
                      't': test_
                      }
     while True:
