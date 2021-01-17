@@ -24,7 +24,7 @@ class InstaUser:
     """класс пользователя инсты, себя любимого только пока"""
     def __init__(self):
         self.token = get_token('Insta_long_token.txt')
-
+        self.id = self.get_me()
         # with open('Insta_long_token.txt', 'r') as f:
         #     line = f.readline()
         #     self.token = line.split(';')[0]
@@ -36,27 +36,30 @@ class InstaUser:
         params = {'fields': 'id,username',
                   'access_token': self.token}
         response = requests.get(enpoint, params)
-        self.my_id = response.json()['id']
+        my_id = response.json()['id']
         time.sleep(0.5)
+        return my_id
 
     def get_media(self):
         """список своих медиа"""
-        enpoint = 'https://graph.instagram.com/me/media'
-        params = {'access_token': self.token}
-        response = requests.get(enpoint, params)
-        time.sleep(0.5)
-        return response.json()['data']
+        if self.id:
+            enpoint = 'https://graph.instagram.com/me/media'
+            params = {'access_token': self.token}
+            response = requests.get(enpoint, params)
+            time.sleep(0.5)
+            return response.json()['data']
 
     def get_my_photos(self, data):
         """ссылки на скачивание фоток"""
-        enpoint = 'https://graph.instagram.com/'
-        params = {'access_token': self.token, 'fields': 'caption,media_type,media_url,timestamp'}
-        index = list()
-        for num, entry in enumerate(data):
-            response = requests.get(enpoint + entry['id'], params)
-            index.append(self.photo_json_processing(response.json(), num))
-            time.sleep(0.5)
-        return index
+        if self.id:
+            enpoint = 'https://graph.instagram.com/'
+            params = {'access_token': self.token, 'fields': 'caption,media_type,media_url,timestamp'}
+            index = list()
+            for num, entry in enumerate(data):
+                response = requests.get(enpoint + entry['id'], params)
+                index.append(self.photo_json_processing(response.json(), num))
+                time.sleep(0.5)
+            return index
 
     def photo_json_processing(self, photo, num=0):
         """Конвертация json фотки в нужный формат"""
